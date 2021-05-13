@@ -1,0 +1,23 @@
+{
+  "name": "jankbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "body-parser": "^1.19.0",
+    "city-timezone": "^1.2.0",
+    "city-timezones": "^1.2.0",
+    "eris": "^0.15.1",
+    "express": "^4.17.1",
+    "geo-tz": "^6.0.1",
+    "jimp": "^0.16.1",
+    "sharp": "^0.28.2",
+    "timezones-list": "^2.1.1"
+  }
+}
