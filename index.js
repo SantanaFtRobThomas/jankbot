@@ -10,7 +10,7 @@ Object.assign(String.prototype, {
     //adds functionality to search for multiple words in one function - i.e. contains any of the words given
     contains() {
         var rv = false;
-        for (var i = 0; i < arguments.length; i++) {
+        for (let i = 0; i < arguments.length; i++) {
             if (this.indexOf(arguments[i]) != -1) {
                 rv = true;
             }
@@ -66,7 +66,7 @@ bot.on("messageCreate", async (msg) => {
                             let f = fs.readFileSync("./images/notadvanced.jpg");
                             await msg.channel.createMessage("It appears you tried to give me multiple commands. That is not advanced. Try again.", {
                                 file: f,
-                                name: "clock.jpg",
+                                name: "notadvanced.jpg",
                             });
                             break;
                         default:
