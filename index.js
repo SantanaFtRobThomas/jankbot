@@ -245,7 +245,7 @@ async function getTimeZonefromLatLong(lat, long) {
     return geoTz(lat, long)[0];
 }
 
-async function doJankIntent(split_msg, msg) {
+async function doJankIntent(msg) {
     {
         let f = fs.readFileSync("./images/jman.png");
         await msg.channel.createMessage("Here's an HQ Jankman! Credit to TANTAPRIZ ;].", {
