@@ -252,7 +252,7 @@ function removeStringOf(str, char) {
 }
 
 async function getGeoCodefromPlace(place_in) {
-    resp = await axios.get(encodeURI(`https://open.mapquestapi.com/geocoding/v1/address?key=${MAPQUEST_TOKEN}&location=${place_in}`));
+    resp = await axios.get(`https://open.mapquestapi.com/geocoding/v1/address?key=${encodeURIComponent(MAPQUEST_TOKEN)}&location=${encodeURIComponent(place_in)}`);
 
     if (resp.data.results[0].locations[0].latLng.lat == 39.78373 && resp.data.results[0].locations[0].latLng.lng == -100.445882) return null;
     else {
