@@ -42,16 +42,21 @@ bot.on("messageCreate", async (msg) => {
     //const bot_was_mentioned = msg.mentions.find((mentionedUser) => mentionedUser.id === bot.user.id); //check if the bot was mentioned
     //^there's something gone wrong with this?
     //const split_msg = msg.content.split(" "); //split the message on spaces (bad, I'll bring in my proper conversational parser at some point)
-    
-    if (msg.content.indexOf(`<@!${bot.user.id}>`) == 0 || msg.content.indexOf(`<@${bot.user.id}>`) == 0) {
+
+    if (
+        msg.content.toLowerCase().indexOf(`<@!${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`<@${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`hey <@!${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`hey <@${bot.user.id}>`) == 0
+    ) {
         let msg_without_tag = msg.content[2] == "!" ? msg.content.slice(`<@!${bot.user.id}>`.length) : msg.content.slice(`<@!${bot.user.id}>`.length);
-        console.log(new Date().toString() + " Bot seen message & tagged:", msg.member.guild.name, "|",  msg.member.user.username,"|", msg.content);
+        console.log(new Date().toString() + " Bot seen message & tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
         //messageReference existing means it's a quote message and we don't want to act on that TODO: only not respond if it's not mentioned in the main text
         try {
             if (chans_can_post[msg.channel.id] || !(msg.channel.id in chans_can_post) || msg.guildID == SANTANAS_TEST_SERVER) {
-                if(msg_without_tag != ""){
+                if (msg_without_tag != "") {
                     user_intent = getUserIntent(msg_without_tag);
-                    switch(user_intent[0]){
+                    switch (user_intent[0]) {
                         case "TIME_INTENT":
                             await doTimeIntent(msg_without_tag, user_intent[1], msg);
                             break;
@@ -63,6 +68,9 @@ bot.on("messageCreate", async (msg) => {
                             break;
                         case "JANK_INTENT":
                             await doJankIntent(msg);
+                            break;
+                        case "FIST_INTENT":
+                            await doFistIntent(msg);
                             break;
                         case "MULTIPLE_INTENT":
                             let f = fs.readFileSync("./images/notadvanced.png");
@@ -77,7 +85,7 @@ bot.on("messageCreate", async (msg) => {
                 } else {
                     await msg.channel.createMessage("<:jankman:736593545376563320>");
                 }
-                
+
                 if (msg.channel.id != TC_BOT_COMMANDS) {
                     //set a cooldown if we're not in #bot-commands
                     chans_can_post[msg.channel.id] = false;
@@ -86,14 +94,18 @@ bot.on("messageCreate", async (msg) => {
                     }, 60000);
                 }
             } else {
-                msg.addReaction('🕑')
+                msg.addReaction("🕑");
             }
         } catch (err) {
             console.warn("Failed to respond to mention.");
             console.warn(err);
         }
     } else {
-        console.log(new Date().toString() + " Bot seen message & not tagged:", msg.member.guild.name, "|",  msg.member.user.username,"|", msg.content);
+        try {
+            console.log(new Date().toString() + " Bot seen message & not tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
+        } catch {
+            console.warn(new Date().toString() + "whoops", msg);
+        }
     }
 });
 
@@ -181,8 +193,8 @@ async function doTimeIntent(msg_in, loc_intent, msg) {
                     timeZone: tz,
                 })
             );
-            if(loc_intent == "LOC_INTENT"){
-                msg_text += `I think the place you've searched for is: https://maps.google.com/?q=${r[0]},${r[1]} . `
+            if (loc_intent == "LOC_INTENT") {
+                msg_text += `I think the place you've searched for is: https://maps.google.com/?q=${r[0]},${r[1]} . `;
             }
             msg_text += `Wow! The time in \n[${place.toUpperCase()}]\n is:`;
             await getClock(d.getHours(), d.getMinutes());
@@ -199,41 +211,42 @@ async function doTimeIntent(msg_in, loc_intent, msg) {
     fs.unlinkSync("./clocktopost.jpg");
 }
 /**
- * 
- * @param {string} msg_in 
- * @returns 
+ *
+ * @param {string} msg_in
+ * @returns
  */
-function extractPlaceNameFromMsg(msg_in){
+function extractPlaceNameFromMsg(msg_in) {
     const msg_split = msg_in.split(" ");
     const in_loc = msg_split.indexOf("in");
     const time_loc = msg_split.indexOf("time");
     let out_loc = -1;
     //strip punctuation except ,
     const chars_to_strip = [".", "?", "!", "|"];
-    for(const word of msg_split){
-        for(const ch of chars_to_strip) msg_split[msg_split.indexOf(word)] = removeStringOf(word, ch);
+    for (const word of msg_split) {
+        for (const ch of chars_to_strip) msg_split[msg_split.indexOf(word)] = removeStringOf(word, ch);
     }
-    const terminators = ["and", "where"]
-    for(const t of terminators) if(msg_split.indexOf(t) != -1){
-        out_loc = msg_split.indexOf(t);
-        break;
-    }
-    if(in_loc != -1 && out_loc != -1){
-        return msg_split.slice(in_loc+1, out_loc).join(" ");
-    } else if(in_loc == -1 && out_loc != -1){
-        return msg_split.slice(time_loc+1, out_loc).join(" ");
-    } else if(in_loc != -1 && out_loc == -1){
-        return msg_split.slice(in_loc+1).join(" ");
+    const terminators = ["and", "where"];
+    for (const t of terminators)
+        if (msg_split.indexOf(t) != -1) {
+            out_loc = msg_split.indexOf(t);
+            break;
+        }
+    if (in_loc != -1 && out_loc != -1) {
+        return msg_split.slice(in_loc + 1, out_loc).join(" ");
+    } else if (in_loc == -1 && out_loc != -1) {
+        return msg_split.slice(time_loc + 1, out_loc).join(" ");
+    } else if (in_loc != -1 && out_loc == -1) {
+        return msg_split.slice(in_loc + 1).join(" ");
     } else {
-        return msg_split.slice(time_loc+1).join(" ");
+        return msg_split.slice(time_loc + 1).join(" ");
     }
 }
 
-function removeStringOf(str, char){
-    while(str.indexOf(char) != -1) {
+function removeStringOf(str, char) {
+    while (str.indexOf(char) != -1) {
         let char_to_remove = str.indexOf(char);
-        if(char_to_remove == str.length-1) return str.slice(0, char_to_remove);
-        else str = str.slice(0, char_to_remove) + str.slice(char_to_remove+1);
+        if (char_to_remove == str.length - 1) return str.slice(0, char_to_remove);
+        else str = str.slice(0, char_to_remove) + str.slice(char_to_remove + 1);
     }
     return str;
 }
@@ -287,21 +300,35 @@ function getUserIntent(msg_as_str) {
     msg_as_str = msg_as_str.toLowerCase();
     let intent = [];
     let intent_count = 0;
+    if (msg_as_str.contains("is it fistchord", "is it fistchord time", "is it fistcord time", "fistcord time", "is it fistcord", "is it time for fistchord"))
+        return ["FIST_INTENT"];
     if (msg_as_str.contains("time")) {
         intent.push("TIME_INTENT");
         intent_count++;
         intent.push(msg_as_str.contains("location", "where") ? "LOC_INTENT" : "NO_LOC_INTENT");
-    } if (msg_as_str.contains("logo")) {
+    }
+    if (msg_as_str.contains("logo")) {
         intent.push("LOGO_INTENT");
         intent_count++;
-    } if (msg_as_str.contains("jank")) {
+    }
+    if (msg_as_str.contains("jank")) {
         intent.push("JANK_INTENT");
         intent_count++;
-    } if (msg_as_str.contains("help")) {
+    }
+    if (msg_as_str.contains("help")) {
         intent.push("HELP_INTENT");
         intent_count++;
     }
     if (intent_count > 1) {
         return ["MULTIPLE_INTENT"];
     } else return intent;
+}
+
+async function doFistIntent(msg) {
+    let now = new Date();
+    if (now.getDay() == 5) {
+        if (17 <= now.getHours() < 21) await msg.channel.createMessage("Almost!");
+        else if (now.getHours() >= 21) await msg.channel.createMessage("Yes!");
+        else await msg.channel.createMessage("Not quite, but it is today!");
+    } else await msg.channel.createMessage("No :( Fistchord is on Friday!");
 }
