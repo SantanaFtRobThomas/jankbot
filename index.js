@@ -39,11 +39,13 @@ const chans_can_post = {
 
 //runs whenever a message is received in any server it's in
 bot.on("messageCreate", async (msg) => {
-    const bot_was_mentioned = msg.mentions.find((mentionedUser) => mentionedUser.id === bot.user.id); //check if the bot was mentioned
+    //const bot_was_mentioned = msg.mentions.find((mentionedUser) => mentionedUser.id === bot.user.id); //check if the bot was mentioned
+    //^there's something gone wrong with this?
     //const split_msg = msg.content.split(" "); //split the message on spaces (bad, I'll bring in my proper conversational parser at some point)
-
-    if (bot_was_mentioned && msg.content.indexOf(`<@!${bot.user.id}>`) == 0) {
-        msg_without_tag = msg.content.slice(`<@!${bot.user.id}>`.length);
+    
+    if (msg.content.indexOf(`<@!${bot.user.id}>`) == 0 || msg.content.indexOf(`<@${bot.user.id}>`) == 0) {
+        let msg_without_tag = msg.content[2] == "!" ? msg.content.slice(`<@!${bot.user.id}>`.length) : msg.content.slice(`<@!${bot.user.id}>`.length);
+        console.log(new Date().toString() + " Bot seen message & tagged:", msg.member.guild.name, "|",  msg.member.user.username,"|", msg.content);
         //messageReference existing means it's a quote message and we don't want to act on that TODO: only not respond if it's not mentioned in the main text
         try {
             if (chans_can_post[msg.channel.id] || !(msg.channel.id in chans_can_post) || msg.guildID == SANTANAS_TEST_SERVER) {
@@ -63,7 +65,7 @@ bot.on("messageCreate", async (msg) => {
                             await doJankIntent(msg);
                             break;
                         case "MULTIPLE_INTENT":
-                            let f = fs.readFileSync("./images/notadvanced.jpg");
+                            let f = fs.readFileSync("./images/notadvanced.png");
                             await msg.channel.createMessage("It appears you tried to give me multiple commands. That is not advanced. Try again.", {
                                 file: f,
                                 name: "notadvanced.jpg",
@@ -83,11 +85,15 @@ bot.on("messageCreate", async (msg) => {
                         chans_can_post[msg.channel.id] = true;
                     }, 60000);
                 }
+            } else {
+                msg.addReaction('🕑')
             }
         } catch (err) {
             console.warn("Failed to respond to mention.");
             console.warn(err);
         }
+    } else {
+        console.log(new Date().toString() + " Bot seen message & not tagged:", msg.member.guild.name, "|",  msg.member.user.username,"|", msg.content);
     }
 });
 
@@ -153,7 +159,7 @@ async function getClock(hrin, minin, is_angry = false) {
  */
 async function doTimeIntent(msg_in, loc_intent, msg) {
     let msg_text = "";
-    if (msg_in != "") {
+    if (msg_in != " time" && msg_in != "time") {
         let c = extractPlaceNameFromMsg(msg_in);
         let r;
         try {
@@ -207,19 +213,19 @@ function extractPlaceNameFromMsg(msg_in){
     for(const word of msg_split){
         for(const ch of chars_to_strip) msg_split[msg_split.indexOf(word)] = removeStringOf(word, ch);
     }
-    const terminators = ["and"]
+    const terminators = ["and", "where"]
     for(const t of terminators) if(msg_split.indexOf(t) != -1){
         out_loc = msg_split.indexOf(t);
         break;
     }
     if(in_loc != -1 && out_loc != -1){
-        return msg_split.slice(in_loc, out_loc).join(" ");
+        return msg_split.slice(in_loc+1, out_loc).join(" ");
     } else if(in_loc == -1 && out_loc != -1){
-        return msg_split.slice(time_loc, out_loc).join(" ");
+        return msg_split.slice(time_loc+1, out_loc).join(" ");
     } else if(in_loc != -1 && out_loc == -1){
-        return msg_split.slice(in_loc).join(" ");
+        return msg_split.slice(in_loc+1).join(" ");
     } else {
-        return msg_split.slice(time_loc).join(" ");
+        return msg_split.slice(time_loc+1).join(" ");
     }
 }
 
