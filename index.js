@@ -327,7 +327,7 @@ function getUserIntent(msg_as_str) {
 async function doFistIntent(msg) {
     let now = new Date();
     if (now.getDay() == 5) {
-        if (17 <= now.getHours() < 21) await msg.channel.createMessage("Almost!");
+        if (now.getHours() >= 17 && now.getHours() < 21) await msg.channel.createMessage("Almost!");
         else if (now.getHours() >= 21) await msg.channel.createMessage("Yes!");
         else await msg.channel.createMessage("Not quite, but it is today!");
     } else await msg.channel.createMessage("No :( Fistchord is on Friday!");
