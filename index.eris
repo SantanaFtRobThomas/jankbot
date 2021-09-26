@@ -1,0 +1,505 @@
+const eris = require("eris");
+const sharp = require("sharp");
+const fs = require("fs");
+const axios = require("axios");
+const geoTz = require("geo-tz");
+const token = require("./token"); //a separate file with tokens/IDs in. Could also do process.env.whatever, either way I'm not posting them on gh lol
+//const chessgame = require('./chessgame')
+//import { ChessGame } from './chessgame';
+
+const CHESS_GAMES = new Array();
+
+Object.assign(String.prototype, {
+    //adds functionality to search for multiple words in one function - i.e. contains any of the words given
+    contains() {
+        var rv = false;
+        for (let i = 0; i < arguments.length; i++) {
+            if (this.indexOf(arguments[i]) != -1) {
+                rv = true;
+            }
+        }
+        return rv;
+    },
+});
+
+const BOT_TOKEN = token.token; //discord bot token goes here. Moved to a different file for github
+const MAPQUEST_TOKEN = token.mapquest;
+const SANTANAS_TEST_SERVER = token.santanas_test;
+const TC_BOT_COMMANDS = token.tc_bot_commands;
+
+//Create the bot
+const bot = new eris.Client(BOT_TOKEN);
+
+//Log to console once connected
+bot.on("ready", () => {
+    console.log("Jank it up!");
+});
+
+//an object to retain info about timing cooldown
+const chans_can_post = {
+    TC_BOT_COMMANDS: true,
+    "850700283767554068": true,
+};
+
+/** chessgame.ChessGame */
+var dbg_chess_game;
+
+//runs whenever a message is received in any server it's in
+bot.on("messageCreate", async (msg) => {
+    //const bot_was_mentioned = msg.mentions.find((mentionedUser) => mentionedUser.id === bot.user.id); //check if the bot was mentioned
+    //^there's something gone wrong with this?
+    //const split_msg = msg.content.split(" "); //split the message on spaces (bad, I'll bring in my proper conversational parser at some point)
+
+    if (
+        msg.content.toLowerCase().indexOf(`<@!${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`<@${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`hey <@!${bot.user.id}>`) == 0 ||
+        msg.content.toLowerCase().indexOf(`hey <@${bot.user.id}>`) == 0
+    ) {
+        let msg_without_tag = msg.content[2] == "!" ? msg.content.slice(`<@!${bot.user.id}>`.length) : msg.content.slice(`<@!${bot.user.id}>`.length);
+        console.log(new Date().toString() + " Bot seen message & tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
+        //messageReference existing means it's a quote message and we don't want to act on that TODO: only not respond if it's not mentioned in the main text
+        try {
+            split_msg_notag = msg_without_tag.split(" ");
+            if(msg_without_tag == " is fistchord a work zone?") {
+                await msg.channel.createMessage("No!");
+                return;
+            }
+            if (split_msg_notag[0] == "") split_msg_notag.shift();
+            if (chans_can_post[msg.channel.id] || !(msg.channel.id in chans_can_post) || msg.guildID == SANTANAS_TEST_SERVER) {
+                if (split_msg_notag[0] == "dbg") {
+                    if (split_msg_notag[1] == "chess") {
+                        switch (split_msg_notag[2]) {
+                            case "startpvp":
+                                dbg_chess_game = new ChessGame(true, null, null);
+                            case "print":
+                                await msg.channel.createMessage(dbg_chess_game.toText());
+                                break;
+                            case "whitemove":
+                                await msg.channel.createMessage(dbg_chess_game.doMove("white", split_msg_notag.slice(3, msg_without_tag.length - 1).join(" ")));
+                                break;
+                            case "blackmove":
+                                await msg.channel.createMessage(dbg_chess_game.doMove("black", split_msg_notag.slice(3, msg_without_tag.length - 1).join(" ")));
+                                break;
+                        }
+                    } else if (split_msg_notag[1] == "echo") {
+                        await msg.channel.createMessage(split_msg_notag.slice(2, msg_without_tag.length - 1).join(" "));
+                    }
+                } else if (msg_without_tag != "") {
+                    user_intent = getUserIntent(msg_without_tag);
+                    switch (user_intent[0]) {
+                        case "TIME_INTENT":
+                            await doTimeIntent(msg_without_tag, user_intent[1], msg);
+                            break;
+                        case "LOGO_INTENT":
+                            await doLogoIntent(msg);
+                            break;
+                        case "HELP_INTENT":
+                            await doHelpIntent(msg);
+                            break;
+                        case "JANK_INTENT":
+                            await doJankIntent(msg);
+                            break;
+                        case "FIST_INTENT":
+                            await doFistIntent(msg);
+                            break;
+                        case "MULTIPLE_INTENT":
+                            let f = fs.readFileSync("./images/notadvanced.png");
+                            await msg.channel.createMessage("It appears you tried to give me multiple commands. That is not advanced. Try again.", {
+                                file: f,
+                                name: "notadvanced.jpg",
+                            });
+                            break;
+                        default:
+                            await msg.channel.createMessage("I didn't understand that. <:jankman:736593545376563320> Use @JankBot help for commands.");
+                    }
+                } else {
+                    await msg.channel.createMessage("<:jankman:736593545376563320>");
+                }
+
+                if (msg.channel.id != TC_BOT_COMMANDS && msg.channel.id != "850700283767554068") {
+                    //set a cooldown if we're not in #bot-commands
+                    chans_can_post[msg.channel.id] = false;
+                    setTimeout(() => {
+                        chans_can_post[msg.channel.id] = true;
+                    }, 60000);
+                }
+            } else {
+                msg.addReaction("🕑");
+            }
+        } catch (err) {
+            console.warn("Failed to respond to mention.");
+            console.warn(err);
+        }
+    } else {
+        try {
+            console.log(new Date().toString() + " Bot seen message & not tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
+        } catch {
+            console.warn(new Date().toString() + "whoops", msg);
+        }
+    }
+});
+
+bot.on("error", (err) => {
+    console.warn(err);
+});
+
+bot.connect();
+/**
+ * Gets a clock and saves to file.
+ */
+async function getClock(hrin, minin, is_angry = false) {
+    const min = minin;
+    const hr_rotation = hrin * 30 + min * 0.5;
+    const min_rotation = min * 6;
+    let images = ["./images/face.png", "./images/gimp.png", "./images/tant.png", "./images/shipclocc.jpg"];
+    let face = sharp(images[parseInt(Math.floor(Math.random() * images.length))]);
+    let hr_hand = is_angry ? sharp("./images/gunarm.png") : sharp("./images/ja2.png");
+    let jman = is_angry ? sharp("./images/jankang.png") : sharp("./images/jankfce.png");
+    let min_hand = is_angry ? sharp("./images/gunarm.png") : sharp("./images/ja2.png");
+
+    jman = await jman.resize(null, 380).toBuffer();
+
+    hr_hand = await hr_hand.rotate(hr_rotation + 10, {
+        background: "#00FFFF00",
+    });
+    let h_m = await sharp(await hr_hand.toBuffer()).metadata();
+    hr_hand = await hr_hand
+        .extract({
+            top: parseInt(Math.floor(h_m.height / 2 - 255)),
+            left: parseInt(Math.floor(h_m.width / 2 - 255)),
+            width: 510,
+            height: 510,
+        })
+        .toBuffer();
+
+    min_hand = await min_hand.rotate(min_rotation + 10, {
+        background: "#00FFFF00",
+    });
+    let m_m = await sharp(await min_hand.toBuffer()).metadata();
+    min_hand = await min_hand
+        .extract({
+            top: parseInt(Math.floor(m_m.height / 2 - 255)),
+            left: parseInt(Math.floor(m_m.width / 2 - 255)),
+            width: 510,
+            height: 510,
+        })
+        .toBuffer();
+
+    await face
+        .composite([
+            { input: hr_hand, top: 0, left: 0 },
+            { input: jman, top: 70, left: 70 },
+            { input: min_hand, top: 0, left: 0 },
+        ])
+        .toFile("./clocktopost.jpg");
+}
+
+/**
+ * When the message was (probably) intended for time.
+ * @param {*} split_msg
+ * @param {*} msg
+ */
+async function doTimeIntent(msg_in, loc_intent, msg) {
+    let msg_text = "";
+    if (msg_in != " time" && msg_in != "time") {
+        let c = extractPlaceNameFromMsg(msg_in);
+        let r;
+        try {
+            r = await getGeoCodefromPlace(c);
+        } catch (e) {
+            r = null;
+        }
+        if (r == null) {
+            msg_text = "That was not advanced.";
+            h = Math.floor(Math.random() * 24);
+            m = Math.floor(Math.random() * 60);
+            await getClock(h, m, true);
+        } else {
+            let tz = await getTimeZonefromLatLong(r[0], r[1]);
+            const place = r[2] == "" ? c : r[2];
+            const d = new Date(
+                new Date().toLocaleString("en-US", {
+                    //fucking americans
+                    timeZone: tz,
+                })
+            );
+            if (loc_intent == "LOC_INTENT") {
+                msg_text += `I think the place you've searched for is: https://maps.google.com/?q=${r[0]},${r[1]} . `;
+            }
+            msg_text += `Wow! The time in \n[${place.toUpperCase()}]\n is:`;
+            await getClock(d.getHours(), d.getMinutes());
+        }
+    } else {
+        let t = new Date();
+        await getClock(t.getHours(), t.getMinutes());
+    }
+    let f = fs.readFileSync("./clocktopost.jpg");
+    await msg.channel.createMessage(msg_text, {
+        file: f,
+        name: "clock.jpg",
+    });
+    fs.unlinkSync("./clocktopost.jpg");
+}
+/**
+ *
+ * @param {string} msg_in
+ * @returns
+ */
+function extractPlaceNameFromMsg(msg_in) {
+    const msg_split = msg_in.split(" ");
+    const in_loc = msg_split.indexOf("in");
+    const time_loc = msg_split.indexOf("time");
+    let out_loc = -1;
+    //strip punctuation except ,
+    const chars_to_strip = [".", "?", "!", "|"];
+    for (const word of msg_split) {
+        for (const ch of chars_to_strip) msg_split[msg_split.indexOf(word)] = removeStringOf(word, ch);
+    }
+    const terminators = ["and", "where"];
+    for (const t of terminators)
+        if (msg_split.indexOf(t) != -1) {
+            out_loc = msg_split.indexOf(t);
+            break;
+        }
+    if (in_loc != -1 && out_loc != -1) {
+        return msg_split.slice(in_loc + 1, out_loc).join(" ");
+    } else if (in_loc == -1 && out_loc != -1) {
+        return msg_split.slice(time_loc + 1, out_loc).join(" ");
+    } else if (in_loc != -1 && out_loc == -1) {
+        return msg_split.slice(in_loc + 1).join(" ");
+    } else {
+        return msg_split.slice(time_loc + 1).join(" ");
+    }
+}
+
+function removeStringOf(str, char) {
+    while (str.indexOf(char) != -1) {
+        let char_to_remove = str.indexOf(char);
+        if (char_to_remove == str.length - 1) return str.slice(0, char_to_remove);
+        else str = str.slice(0, char_to_remove) + str.slice(char_to_remove + 1);
+    }
+    return str;
+}
+
+async function getGeoCodefromPlace(place_in) {
+    resp = await axios.get(
+        `https://open.mapquestapi.com/geocoding/v1/address?key=${encodeURIComponent(MAPQUEST_TOKEN)}&location=${encodeURIComponent(place_in)}`
+    );
+
+    if (resp.data.results[0].locations[0].latLng.lat == 39.78373 && resp.data.results[0].locations[0].latLng.lng == -100.445882) return null;
+    else {
+        return [resp.data.results[0].locations[0].latLng.lat, resp.data.results[0].locations[0].latLng.lng, resp.data.results[0].locations[0].adminArea5];
+    }
+}
+
+async function getTimeZonefromLatLong(lat, long) {
+    return geoTz(lat, long)[0];
+}
+
+async function doJankIntent(msg) {
+    {
+        let f = fs.readFileSync("./images/jman.png");
+        await msg.channel.createMessage("Here's an HQ Jankman! Credit to TANTAPRIZ ;].", {
+            file: f,
+            name: "hommedujanque.jpg",
+        });
+    }
+}
+
+async function doHelpIntent(msg) {
+    await msg.channel.createMessage(
+        `Follow me! There's plenty more jank in the sea!
+\`@JankBot time <city>\` for the time -- you can also ask me for the location!
+\`@JankBot jankman\` for a huge jankman.
+\`@JankBot logo\` for a random MuseScore logo. DM Santana to add to the collection.
+
+I'll only post outside of #bot-commands once every minute as an anti-spam measure.
+All feature requests to Santana ft. Rob Thomas.`
+    );
+}
+
+async function doLogoIntent(msg) {
+    const logos = fs.readdirSync("./muselogos/");
+    const logo_to_send = logos[parseInt(Math.floor(Math.random() * logos.length))];
+    const l = fs.readFileSync("./muselogos/" + logo_to_send);
+    await msg.channel.createMessage("", {
+        file: l,
+        name: logo_to_send,
+    });
+}
+
+function getUserIntent(msg_as_str) {
+    msg_as_str = msg_as_str.toLowerCase();
+
+    let intent = [];
+    let intent_count = 0;
+    if (msg_as_str.contains("is it fistchord", "is it fistchord time", "is it fistcord time", "fistcord time", "is it fistcord", "is it time for fistchord"))
+        return ["FIST_INTENT"];
+    if (msg_as_str.contains("time")) {
+        intent.push("TIME_INTENT");
+        intent_count++;
+        intent.push(msg_as_str.contains("location", "where") ? "LOC_INTENT" : "NO_LOC_INTENT");
+    }
+    if (msg_as_str.contains("logo")) {
+        intent.push("LOGO_INTENT");
+        intent_count++;
+    }
+    if (msg_as_str.contains("jank")) {
+        intent.push("JANK_INTENT");
+        intent_count++;
+    }
+    if (msg_as_str.contains("help")) {
+        intent.push("HELP_INTENT");
+        intent_count++;
+    }
+    if (intent_count > 1) {
+        return ["MULTIPLE_INTENT"];
+    } else return intent;
+}
+
+async function doFistIntent(msg) {
+    let now = new Date();
+    if (now.getDay() == 5) {
+        if (now.getHours() >= 17 && now.getHours() < 21) await msg.channel.createMessage("Almost!");
+        else if (now.getHours() >= 21) await msg.channel.createMessage("Yes!");
+        else await msg.channel.createMessage("Not quite, but it is today!");
+    } else await msg.channel.createMessage("No :( Fistchord is on Friday!");
+}
+
+//Fuck js modules man seriously
+
+const jsChessEngine = require("js-chess-engine");
+const { stringify } = require("querystring");
+
+class ChessGame {
+    constructor(pvp, white_player, black_player) {
+        this.the_game = new jsChessEngine.Game();
+        this.white_player = white_player;
+        this.black_player = black_player;
+        this.the_board = new ChessBoard(this.the_game.exportJson());
+        this.is_pvp = pvp;
+    }
+    is_pvp = false;
+    white_player = "";
+    black_player = "";
+    the_board = null;
+
+    the_game = null;
+
+    toText() {
+        return this.the_board.toText();
+    }
+
+    doMove(side, move_string) {
+        const game_sitch = this.the_game.exportJson();
+        if (side == game_sitch["turn"]) {
+            let parsed_move_string = this.parseMovestring(side == "white", move_string, game_sitch);
+            if (parsed_move_string !== null) {
+                this.the_game.move(parsed_move_string[0], parsed_move_string[1]);
+                this.the_board.updateFromJSON(this.the_game.exportJson());
+                return this.the_board.toText();
+            }
+        } else {
+        }
+    }
+
+    parseMovestring(side, move_string, game_sitch) {
+        /** @type string */
+        let lower_case_move_string = move_string.toLowerCase();
+        if (/^[a-h][1-8]:[a-h][1-8]/.test(move_string.toLowerCase())) return move_string.toUpperCase().split(":");
+        else if (lower_case_move_string.contains(" to ")) {
+            let split_on_to = lower_case_move_string.split(" to ");
+            let from = "";
+            let to = "";
+            if (Object.keys(CHESS_REFS).includes(split_on_to[0])) {
+                let piece_candidate = [];
+                let piece_to_search = side ? CHESS_REFS[split_on_to[0]].toUpperCase() : CHESS_REFS[split_on_to[0]];
+                for(const [loc, piece] of Object.entries(game_sitch['pieces'])){
+                    if(piece == piece_to_search) piece_candidate.push(loc);
+                }
+
+                if(/[a-h][1-8]/.test(split_on_to[1])){
+                    to = split_on_to[1].toUpperCase();
+                }
+                let valid_moves = []
+                if(piece_candidate.length > 0){
+                    for(let loc of piece_candidate){
+                        if(game_sitch['moves'][loc] != null) {
+                            if(game_sitch['moves'][loc].includes(to)) valid_moves.push(loc);
+                        }
+                    }
+                    if(valid_moves.length == 1){
+                        return([valid_moves[0], to]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+const CHESS_REFS = {
+    rook: "r",
+    bishop: "b",
+    knight: "n",
+    queen: "q",
+    king: "k",
+    pawn: "p",
+};
+
+class ChessBoard {
+    constructor(json_in) {
+        this.updateFromJSON(json_in);
+    }
+
+    abcd = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    rows = ["8", "7", "6", "5", "4", "3", "2", "1"];
+
+    updateFromJSON(json_in) {
+        //clear board
+        for (let row of this.rows) this[row] = new Array(8).fill(0);
+        //populate board
+        for (let loc in json_in["pieces"]) {
+            this[loc[1].toString()][this.abcd.indexOf(loc[0])] = PIECES[json_in["pieces"][loc]];
+        }
+        for (let i = 0; i < 8; i++) {
+            let letter = this.rows[i];
+            for (let e = 0; e < 8; e++) {
+                if (this[letter][e] == 0) {
+                    this[letter][e] = i % 2 == 0 ? (e % 2 == 0 ? PIECES.BLK : PIECES.WHT) : e % 2 == 0 ? PIECES.WHT : PIECES.BLK;
+                }
+            }
+        }
+    }
+
+    toText() {
+        let txt = `\`\`\`
+  A B C D E F G H\n`;
+        for (let row of this.rows) {
+            txt += `${row} `;
+            for (let e of this[row]) txt += `${e} `;
+            txt += "\n";
+        }
+        txt += "```";
+        return txt;
+    }
+}
+
+const PIECES = {
+    R: "R",
+    N: "N",
+    B: "B",
+    Q: "Q",
+    K: "K",
+    P: "P",
+    r: "r",
+    n: "n",
+    b: "b",
+    q: "q",
+    k: "k",
+    p: "q",
+    BLK: "#",
+    WHT: " ",
+};
+
+//exports.ChessGame = ChessGame;

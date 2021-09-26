@@ -1,0 +1,10 @@
+{
+    "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/images/**": true,
+    "**/Jankedex/**": true,
+    "**/muselogos/**": true
+  }
+}

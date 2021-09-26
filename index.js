@@ -1,10 +1,13 @@
-const eris = require("eris");
+const Discord = require("discord.js");
 const sharp = require("sharp");
 const fs = require("fs");
-const cz = require("city-timezones");
-const axios = require("axios");
-const geoTz = require("geo-tz");
 const token = require("./token"); //a separate file with tokens/IDs in. Could also do process.env.whatever, either way I'm not posting them on gh lol
+const { doTimeIntent } = require("./time");
+const { doJankIntent, doResourceIntent, handleResourceMenu } = require("./resources");
+const { doLogoIntent, handleNewLogoButton } = require("./logo");
+const { doJankedexIntent, handleJdxButton } = require("./jankedex");
+const { doFistIntent, doButtonIntent, doQuitSibelius } = require("./stupidshit");
+const { doHelpIntent } = require('./help');
 
 Object.assign(String.prototype, {
     //adds functionality to search for multiple words in one function - i.e. contains any of the words given
@@ -19,74 +22,86 @@ Object.assign(String.prototype, {
     },
 });
 
-const BOT_TOKEN = token.token; //discord bot token goes here. Moved to a different file for github
 const MAPQUEST_TOKEN = token.mapquest;
 const SANTANAS_TEST_SERVER = token.santanas_test;
 const TC_BOT_COMMANDS = token.tc_bot_commands;
 
 //Create the bot
-const bot = new eris.Client(BOT_TOKEN);
+const bot = new Discord.Client({ intents: [Discord.Intents.FLAGS.GUILDS, Discord.Intents.FLAGS.GUILD_MESSAGES] });
+bot.login(token.token);
+
+/**
+ * 
+ * @param {string} msg_in 
+ * @returns 
+ */
+function botShouldWake(msg_in) {
+    const BOT_WAKE_WORDS = ["j!", `<@!${bot.user.id}>`,`<@${bot.user.id}>`]
+    for(w of BOT_WAKE_WORDS){
+        if(msg_in.toLowerCase().startsWith(w)){
+            spliced_msg = msg_in.slice(w.length).split(" ");
+            if (spliced_msg[0] == "") spliced_msg.shift();
+            return [true, spliced_msg, w]
+        }
+    }
+    return [false]
+}
 
 //Log to console once connected
 bot.on("ready", () => {
     console.log("Jank it up!");
+    //bot.user.setAvatar('./av.png')
 });
 
 //an object to retain info about timing cooldown
 const chans_can_post = {
     TC_BOT_COMMANDS: true,
+    "850700283767554068": true,
 };
 
-//runs whenever a message is received in any server it's in
-bot.on("messageCreate", async (msg) => {
-    //const bot_was_mentioned = msg.mentions.find((mentionedUser) => mentionedUser.id === bot.user.id); //check if the bot was mentioned
-    //^there's something gone wrong with this?
-    //const split_msg = msg.content.split(" "); //split the message on spaces (bad, I'll bring in my proper conversational parser at some point)
+const COMMANDS = {
+    TIME_INTENT: {trigger_words: ['time'], f: async (msg) => {await doTimeIntent(msg)}, helpMsg: 'time <city>: Get the time.'},
+    LOGO_INTENT: {trigger_words: ['logo'], f: async (msg) => {await doLogoIntent(msg)}, helpMsg: 'logo: Get a random MuseScore logo.'},
+    HELP_INTENT: {trigger_words: ['help'], f: async (msg) => {await doHelpIntent(msg, COMMANDS)}, helpMsg: 'help: Get some help.'},
+    JANK_INTENT: {trigger_words: ['jank' ,'jankman'], f: async (msg) => {await doJankIntent(msg)}, helpMsg: 'jankman: Get a jankman.'},
+    FIST_INTENT: {trigger_words: ['fistchord', 'fistcord'], f: async (msg) => {await doFistIntent(msg)}, helpMsg: 'fistchord: Is it fistchord?'},
+    RESOURCE_INTENT: {trigger_words: ['resource', 'resources'], f: async (msg) => {await doResourceIntent(msg)}, helpMsg: 'resources: Get parts of jankman for The Meme.'},
+    BUTTON_INTENT: {trigger_words: ['button'], f: async (msg) => {await doButtonIntent(msg)}, helpMsg: ''},
+    JANKEDEX_INTENT: {trigger_words: ['jankedex'], f: async (msg) => {await doJankedexIntent(msg)}, helpMsg: 'jankedex <number>: Show the jankedex. You can ask for a specific number or will get a random one if you don\'t specify.'},
+}
 
-    if (
-        msg.content.toLowerCase().indexOf(`<@!${bot.user.id}>`) == 0 ||
-        msg.content.toLowerCase().indexOf(`<@${bot.user.id}>`) == 0 ||
-        msg.content.toLowerCase().indexOf(`hey <@!${bot.user.id}>`) == 0 ||
-        msg.content.toLowerCase().indexOf(`hey <@${bot.user.id}>`) == 0
-    ) {
-        let msg_without_tag = msg.content[2] == "!" ? msg.content.slice(`<@!${bot.user.id}>`.length) : msg.content.slice(`<@!${bot.user.id}>`.length);
-        console.log(new Date().toString() + " Bot seen message & tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
-        //messageReference existing means it's a quote message and we don't want to act on that TODO: only not respond if it's not mentioned in the main text
+//runs whenever a message is received in any server it's in
+bot.on("message", async (msg) => {
+    if (msg.content.toLowerCase() == "quit sibelius" || msg.content == "<:quit1:737227012435083274><:quit2:737226986191061013>") {
+        doQuitSibelius(msg);
+        return;
+    }
+    bsw = botShouldWake(msg.content)
+    if (bsw[0]) {
+        let msg_without_tag = bsw[1].join(" ");
         try {
-            if (chans_can_post[msg.channel.id] || !(msg.channel.id in chans_can_post) || msg.guildID == SANTANAS_TEST_SERVER) {
+            //if (chans_can_post[msg.channel.id] || !(msg.channel.id in chans_can_post) || msg.guildID == SANTANAS_TEST_SERVER) {
+            if (chans_can_post[msg.channel.id] || msg.guild.id == SANTANAS_TEST_SERVER) {
                 if (msg_without_tag != "") {
-                    user_intent = getUserIntent(msg_without_tag);
-                    switch (user_intent[0]) {
-                        case "TIME_INTENT":
-                            await doTimeIntent(msg_without_tag, user_intent[1], msg);
+                    user_intent = getUserIntent(bsw[1]);
+                    switch(user_intent.length){
+                        case 0:
+                            await msg.channel.send("I didn't understand that. <:jankman:736593545376563320> Use @JankBot help for commands.");
                             break;
-                        case "LOGO_INTENT":
-                            await doLogoIntent(msg);
-                            break;
-                        case "HELP_INTENT":
-                            await doHelpIntent(msg);
-                            break;
-                        case "JANK_INTENT":
-                            await doJankIntent(msg);
-                            break;
-                        case "FIST_INTENT":
-                            await doFistIntent(msg);
-                            break;
-                        case "MULTIPLE_INTENT":
-                            let f = fs.readFileSync("./images/notadvanced.png");
-                            await msg.channel.createMessage("It appears you tried to give me multiple commands. That is not advanced. Try again.", {
-                                file: f,
-                                name: "notadvanced.jpg",
-                            });
+                        case 1:
+                            msg['wotag'] = msg_without_tag;
+                            await COMMANDS[user_intent[0]].f(msg);
                             break;
                         default:
-                            await msg.channel.createMessage("I didn't understand that. <:jankman:736593545376563320> Use @JankBot help for commands.");
+                            await msg.channel.send({
+                                content: "It appears you tried to give me multiple commands. That is not advanced. Try again.",
+                                files: ["./images/notadvanced.png"],
+                            });
                     }
                 } else {
-                    await msg.channel.createMessage("<:jankman:736593545376563320>");
+                    await msg.channel.send("<:jankman:736593545376563320>");
                 }
-
-                if (msg.channel.id != TC_BOT_COMMANDS) {
+                if (msg.channel.id != TC_BOT_COMMANDS && msg.channel.id != "850700283767554068") {
                     //set a cooldown if we're not in #bot-commands
                     chans_can_post[msg.channel.id] = false;
                     setTimeout(() => {
@@ -94,17 +109,11 @@ bot.on("messageCreate", async (msg) => {
                     }, 60000);
                 }
             } else {
-                msg.addReaction("🕑");
+                msg.react("🕑");
             }
         } catch (err) {
             console.warn("Failed to respond to mention.");
             console.warn(err);
-        }
-    } else {
-        try {
-            console.log(new Date().toString() + " Bot seen message & not tagged:", msg.member.guild.name, "|", msg.member.user.username, "|", msg.content);
-        } catch {
-            console.warn(new Date().toString() + "whoops", msg);
         }
     }
 });
@@ -113,222 +122,41 @@ bot.on("error", (err) => {
     console.warn(err);
 });
 
-bot.connect();
 /**
- * Gets a clock and saves to file.
+ * 
+ * @param {Array} msg_as_str 
  */
-async function getClock(hrin, minin, is_angry = false) {
-    const min = minin;
-    const hr_rotation = hrin * 30 + min * 0.5;
-    const min_rotation = min * 6;
-    let images = ["./images/face.png", "./images/gimp.png", "./images/tant.png"];
-    let face = sharp(images[parseInt(Math.floor(Math.random() * images.length))]);
-    let hr_hand = is_angry ? sharp("./images/gunarm.png") : sharp("./images/ja2.png");
-    let jman = is_angry ? sharp("./images/jankang.png") : sharp("./images/jankfce.png");
-    let min_hand = is_angry ? sharp("./images/gunarm.png") : sharp("./images/ja2.png");
-
-    jman = await jman.resize(null, 380).toBuffer();
-
-    hr_hand = await hr_hand.rotate(hr_rotation + 10, {
-        background: "#00FFFF00",
-    });
-    let h_m = await sharp(await hr_hand.toBuffer()).metadata();
-    hr_hand = await hr_hand
-        .extract({
-            top: parseInt(Math.floor(h_m.height / 2 - 255)),
-            left: parseInt(Math.floor(h_m.width / 2 - 255)),
-            width: 510,
-            height: 510,
-        })
-        .toBuffer();
-
-    min_hand = await min_hand.rotate(min_rotation + 10, {
-        background: "#00FFFF00",
-    });
-    let m_m = await sharp(await min_hand.toBuffer()).metadata();
-    min_hand = await min_hand
-        .extract({
-            top: parseInt(Math.floor(m_m.height / 2 - 255)),
-            left: parseInt(Math.floor(m_m.width / 2 - 255)),
-            width: 510,
-            height: 510,
-        })
-        .toBuffer();
-
-    await face
-        .composite([
-            { input: hr_hand, top: 0, left: 0 },
-            { input: jman, top: 70, left: 70 },
-            { input: min_hand, top: 0, left: 0 },
-        ])
-        .toFile("./clocktopost.jpg");
-}
-
-/**
- * When the message was (probably) intended for time.
- * @param {*} split_msg
- * @param {*} msg
- */
-async function doTimeIntent(msg_in, loc_intent, msg) {
-    let msg_text = "";
-    if (msg_in != " time" && msg_in != "time") {
-        let c = extractPlaceNameFromMsg(msg_in);
-        let r;
-        try {
-            r = await getGeoCodefromPlace(c);
-        } catch (e) {
-            r = null;
-        }
-        if (r == null) {
-            msg_text = "That was not advanced.";
-            h = Math.floor(Math.random() * 24);
-            m = Math.floor(Math.random() * 60);
-            await getClock(h, m, true);
-        } else {
-            let tz = await getTimeZonefromLatLong(r[0], r[1]);
-            const place = r[2] == "" ? c : r[2];
-            const d = new Date(
-                new Date().toLocaleString("en-US", {
-                    //fucking americans
-                    timeZone: tz,
-                })
-            );
-            if (loc_intent == "LOC_INTENT") {
-                msg_text += `I think the place you've searched for is: https://maps.google.com/?q=${r[0]},${r[1]} . `;
-            }
-            msg_text += `Wow! The time in \n[${place.toUpperCase()}]\n is:`;
-            await getClock(d.getHours(), d.getMinutes());
-        }
-    } else {
-        let t = new Date();
-        await getClock(t.getHours(), t.getMinutes());
-    }
-    let f = fs.readFileSync("./clocktopost.jpg");
-    await msg.channel.createMessage(msg_text, {
-        file: f,
-        name: "clock.jpg",
-    });
-    fs.unlinkSync("./clocktopost.jpg");
-}
-/**
- *
- * @param {string} msg_in
- * @returns
- */
-function extractPlaceNameFromMsg(msg_in) {
-    const msg_split = msg_in.split(" ");
-    const in_loc = msg_split.indexOf("in");
-    const time_loc = msg_split.indexOf("time");
-    let out_loc = -1;
-    //strip punctuation except ,
-    const chars_to_strip = [".", "?", "!", "|"];
-    for (const word of msg_split) {
-        for (const ch of chars_to_strip) msg_split[msg_split.indexOf(word)] = removeStringOf(word, ch);
-    }
-    const terminators = ["and", "where"];
-    for (const t of terminators)
-        if (msg_split.indexOf(t) != -1) {
-            out_loc = msg_split.indexOf(t);
-            break;
-        }
-    if (in_loc != -1 && out_loc != -1) {
-        return msg_split.slice(in_loc + 1, out_loc).join(" ");
-    } else if (in_loc == -1 && out_loc != -1) {
-        return msg_split.slice(time_loc + 1, out_loc).join(" ");
-    } else if (in_loc != -1 && out_loc == -1) {
-        return msg_split.slice(in_loc + 1).join(" ");
-    } else {
-        return msg_split.slice(time_loc + 1).join(" ");
-    }
-}
-
-function removeStringOf(str, char) {
-    while (str.indexOf(char) != -1) {
-        let char_to_remove = str.indexOf(char);
-        if (char_to_remove == str.length - 1) return str.slice(0, char_to_remove);
-        else str = str.slice(0, char_to_remove) + str.slice(char_to_remove + 1);
-    }
-    return str;
-}
-
-async function getGeoCodefromPlace(place_in) {
-    resp = await axios.get(`https://open.mapquestapi.com/geocoding/v1/address?key=${encodeURIComponent(MAPQUEST_TOKEN)}&location=${encodeURIComponent(place_in)}`);
-
-    if (resp.data.results[0].locations[0].latLng.lat == 39.78373 && resp.data.results[0].locations[0].latLng.lng == -100.445882) return null;
-    else {
-        return [resp.data.results[0].locations[0].latLng.lat, resp.data.results[0].locations[0].latLng.lng, resp.data.results[0].locations[0].adminArea5];
-    }
-}
-
-async function getTimeZonefromLatLong(lat, long) {
-    return geoTz(lat, long)[0];
-}
-
-async function doJankIntent(msg) {
-    {
-        let f = fs.readFileSync("./images/jman.png");
-        await msg.channel.createMessage("Here's an HQ Jankman! Credit to TANTAPRIZ ;].", {
-            file: f,
-            name: "hommedujanque.jpg",
-        });
-    }
-}
-
-async function doHelpIntent(msg) {
-    await msg.channel.createMessage(
-        `Follow me! There's plenty more jank in the sea!
-\`@JankBot time <city>\` for the time -- you can also ask me for the location!
-\`@JankBot jankman\` for a huge jankman.
-\`@JankBot logo\` for a random MuseScore logo. DM Santana to add to the collection.
-
-I'll only post outside of #bot-commands once every minute as an anti-spam measure.
-All feature requests to Santana ft. Rob Thomas.`
-    );
-}
-
-async function doLogoIntent(msg) {
-    const logos = fs.readdirSync("./muselogos/");
-    const logo_to_send = logos[parseInt(Math.floor(Math.random() * logos.length))];
-    const l = fs.readFileSync("./muselogos/" + logo_to_send);
-    await msg.channel.createMessage("", {
-        file: l,
-        name: logo_to_send,
-    });
-}
-
 function getUserIntent(msg_as_str) {
-    msg_as_str = msg_as_str.toLowerCase();
-    let intent = [];
-    let intent_count = 0;
-    if (msg_as_str.contains("is it fistchord", "is it fistchord time", "is it fistcord time", "fistcord time", "is it fistcord", "is it time for fistchord"))
-        return ["FIST_INTENT"];
-    if (msg_as_str.contains("time")) {
-        intent.push("TIME_INTENT");
-        intent_count++;
-        intent.push(msg_as_str.contains("location", "where") ? "LOC_INTENT" : "NO_LOC_INTENT");
+    lc_msg_as_str = []
+    for(e of msg_as_str) lc_msg_as_str.push(e.toLowerCase());
+    user_intents = []
+    for(const [c_name, c] of Object.entries(COMMANDS)) {
+        for(const t of c['trigger_words']){
+            if(lc_msg_as_str.includes(t)){
+                user_intents.push(c_name);
+                break;
+            }
+        }
     }
-    if (msg_as_str.contains("logo")) {
-        intent.push("LOGO_INTENT");
-        intent_count++;
-    }
-    if (msg_as_str.contains("jank")) {
-        intent.push("JANK_INTENT");
-        intent_count++;
-    }
-    if (msg_as_str.contains("help")) {
-        intent.push("HELP_INTENT");
-        intent_count++;
-    }
-    if (intent_count > 1) {
-        return ["MULTIPLE_INTENT"];
-    } else return intent;
+    return user_intents;
 }
 
-async function doFistIntent(msg) {
-    let now = new Date();
-    if (now.getDay() == 5) {
-        if (now.getHours() >= 17 && now.getHours() < 21) await msg.channel.createMessage("Almost!");
-        else if (now.getHours() >= 21) await msg.channel.createMessage("Yes!");
-        else await msg.channel.createMessage("Not quite, but it is today!");
-    } else await msg.channel.createMessage("No :( Fistchord is on Friday!");
-}
+bot.on("interaction", (interaction) => {
+    if (interaction.isSelectMenu()) {
+        if (interaction.customID == "JANK_RESOURCE_SELECT") {
+            handleResourceMenu(interaction);
+        }
+    }
+    if (interaction.isButton()) {
+        if (interaction.customID.startsWith("NEWLOGO")) {
+            handleNewLogoButton(interaction);
+        }
+        if (interaction.customID.startsWith("JANKEDEX")) {
+            handleJdxButton(interaction);
+        }
+        if (interaction.customID.startsWith("QUIT_SIBELIUS")) {
+            let msg_to_send = { content: "<:logo_Sibelius_bloody:737227893825994845>", files: ["./images/sib_crashed.png"], components: [], attachments: [] };
+            interaction.update(msg_to_send);
+        }
+    }
+});

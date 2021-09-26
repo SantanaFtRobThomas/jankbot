@@ -13,10 +13,12 @@
     "body-parser": "^1.19.0",
     "city-timezone": "^1.2.0",
     "city-timezones": "^1.2.0",
+    "discord.js": "^13.0.0-dev.56b5b7e.1625313788",
     "eris": "^0.15.1",
     "express": "^4.17.1",
     "geo-tz": "^6.0.1",
     "jimp": "^0.16.1",
+    "js-chess-engine": "^0.11.3",
     "sharp": "^0.28.2",
     "timezones-list": "^2.1.1"
   }
